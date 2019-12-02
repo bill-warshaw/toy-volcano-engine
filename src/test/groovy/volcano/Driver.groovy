@@ -56,19 +56,25 @@ class Driver extends Specification {
   def 'main test'() {
     given:
     def query = """
-SELECT department.name, 
+select department.name, 
        max(course.avg_gpa) 
-FROM   course 
-       JOIN department 
-         ON course.department = department.abbreviation 
-GROUP  BY department.name 
-ORDER  BY department.name
+from   course 
+       join department 
+         on course.department = department.abbreviation 
+group  by department.name 
+order  by department.name
 """
 
     expect:
     def result = new QueryEngine(db, 'localhost').executeQuery(query)
     assert result == queryH2Database(query)
-    result == []
+    println()
+    println()
+    println("================ RESULTS ================")
+    result.each {
+      println("[" + it + "]")
+    }
+    println("=========================================")
   }
 
   private void populateH2Database(List<Row> courseData, List<Row> departmentData) {
