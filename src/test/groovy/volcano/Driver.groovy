@@ -16,16 +16,16 @@ class Driver extends Specification {
     given:
     def tableOneNames = ['customer_id', 'customer_name', 'customer_totalspend', 'customer_happy']
     def tableOneTypes = [INT, STRING, DOUBLE, BOOLEAN]
-    def tableOne = new Table('customers', tableOneNames, tableOneTypes, dataT1)
+    def tableOne = new Table('c', tableOneNames, tableOneTypes, dataT1)
     def tableTwoNames = ['id', 'n', 'x']
     def tableTwoTypes = [INT, STRING, INT]
     def tableTwo = new Table('t2', tableTwoNames, tableTwoTypes, dataT2)
-    Database db = new Database([customers: tableOne, t2: tableTwo])
+    Database db = new Database([c: tableOne, t2: tableTwo])
 
     expect:
 //    new QueryEngine(db).executeQuery('select distinct customer_id,customer_name from customers where customer_id > 1 order by customer_name asc, customer_id desc limit 2') == []
-//    new QueryEngine(db).executeQuery("select customer_id, avg(customer_totalspend) from customers group by customer_id") == []
-    new QueryEngine(db).executeQuery("select customers.customer_id, t2.n, t2.x from customers join t2 on customer_id") == []
+    new QueryEngine(db).executeQuery("select c.customer_id, avg(c.customer_totalspend) from c group by c.customer_id") == []
+//    new QueryEngine(db).executeQuery("select customers.customer_id, t2.n, t2.x from customers join t2 on customer_id") == []
   }
 
   private static List<Row> getDataT1() {

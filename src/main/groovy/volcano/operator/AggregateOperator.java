@@ -16,15 +16,14 @@ import java.util.Set;
 import com.google.common.base.Strings;
 
 import volcano.db.Row;
-import volcano.db.Type;
 import volcano.operator.aggregate.AggregateFn;
 import volcano.operator.util.OutputSchema;
+import volcano.operator.util.Column;
 
 public class AggregateOperator implements Operator {
   private final Operator input;
-  private final List<String> groupingColumns;
-  private final List<String> columnsToProject;
-  private final List<String> aggrFns;
+  private final List<Column> groupingColumns;
+  private final List<Column> aggrColumns;
 
   private final List<Integer> groupingColIndexes;
   private final OutputSchema outputSchema;
@@ -35,34 +34,17 @@ public class AggregateOperator implements Operator {
   private final Set<Object> uniqueGroups;
   private Iterator uniqueGroupsToReturn;
 
-  public AggregateOperator(
-      Operator input, List<String> groupingColumns, List<String> columnsToProject, List<String> aggrFns) {
+  public AggregateOperator(Operator input, List<Column> columns) {
     this.input = input;
-    this.groupingColumns = groupingColumns;
-    this.columnsToProject = columnsToProject;
-    this.aggrFns = aggrFns;
+    this.groupingColumns = columns.stream().filter(Column::isGrouping).collect(toList());
+    this.aggrColumns = columns.stream().filter(c -> c.getFn().isPresent()).collect(toList());
     this.aggregates = new ArrayList<>();
     this.uniqueGroups = new HashSet<>();
     this.groupingColIndexes = groupingColumns.stream()
-        .map(gc -> input.getOutputSchema().columnIndex(gc))
+        .map(gc -> input.getOutputSchema().columnIndex(gc.getName()))
         .collect(toList());
-    aggrFns.forEach(c -> aggregates.add(new HashMap<>()));
-
-    List<String> columns = new ArrayList<>();
-    groupingColumns.forEach(columns::add);
-    columnsToProject.forEach(columns::add);
-    List<Type> columnTypes = new ArrayList<>();
-    //todo figure out grouping col types
-    groupingColumns.forEach(c -> columnTypes.add(Type.STRING));
-    aggrFns.forEach(c -> {
-      if (AggregateFn.valueOf(c) == AVG) {
-        columnTypes.add(Type.DOUBLE);
-      } else {
-        //todo figure out types (e.g. string?)
-        columnTypes.add(Type.INT);
-      }
-    });
-    this.outputSchema = new OutputSchema(columns, columnTypes);
+    aggrColumns.forEach(c -> aggregates.add(new HashMap<>()));
+    this.outputSchema = new OutputSchema(columns);
   }
 
   @Override
@@ -76,11 +58,12 @@ public class AggregateOperator implements Operator {
       List<Object> groupingElements = groupingColIndexes.stream().map(r::getAt).collect(toList());
       uniqueGroups.add(groupingElements);
 
-      for (int i = 0; i < aggrFns.size(); i++) {
-        String col = columnsToProject.get(i);
-        AggregateFn fn = AggregateFn.valueOf(aggrFns.get(i));
+      for (int i = 0; i < aggrColumns.size(); i++) {
+        Column col = aggrColumns.get(i);
+        String colName = col.getName();
+        AggregateFn fn = col.getFn().get();
         HashMap<Object,Object> aggrMap = aggregates.get(i);
-        Object aggrElem = r.getAt(input.getOutputSchema().columnIndex(col));
+        Object aggrElem = r.getAt(input.getOutputSchema().columnIndex(colName));
         if (!aggrMap.containsKey(groupingElements)) {
           if (fn == COUNT) {
             aggrMap.put(groupingElements, 1);
@@ -135,9 +118,10 @@ public class AggregateOperator implements Operator {
     }
     List<Comparable> group = (List<Comparable>)uniqueGroupsToReturn.next();
     List<Comparable> aggs = new ArrayList<>();
-    for (int i = 0; i < aggrFns.size(); i++) {
+    for (int i = 0; i < aggrColumns.size(); i++) {
+      Column col = aggrColumns.get(i);
       Object agg = aggregates.get(i).get(group);
-      switch (AggregateFn.valueOf(aggrFns.get(i))) {
+      switch (col.getFn().get()) {
       case AVG:
         aggs.add(((BigDecimal)((Object[])agg)[0]).doubleValue() / (Integer)((Object[])agg)[1]);
         break;
@@ -150,7 +134,7 @@ public class AggregateOperator implements Operator {
         aggs.add(((BigDecimal)agg).doubleValue());
         break;
       default:
-        throw new IllegalArgumentException(String.format("Unrecognized aggr fn %s", aggrFns.get(i)));
+        throw new IllegalArgumentException(String.format("Unrecognized aggr fn %s", col.getFn().get()));
       }
     }
     group.addAll(aggs);
@@ -174,17 +158,8 @@ public class AggregateOperator implements Operator {
     sb.append("grouping:");
     sb.append(groupingColumns);
     sb.append(",");
-    sb.append("fns:[");
-    for (int i = 0; i < aggrFns.size(); i++) {
-      sb.append(aggrFns.get(i));
-      sb.append("(");
-      sb.append(columnsToProject.get(i));
-      sb.append(")");
-      if (i != aggrFns.size() - 1) {
-        sb.append(",");
-      }
-    }
-    sb.append("]");
+    sb.append("fns:");
+    sb.append(aggrColumns);
     sb.append(",");
     sb.append("input:").append("\n");
     sb.append(input.printOperator(indentation + 2));

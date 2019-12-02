@@ -47,6 +47,10 @@ public class Table {
     return columnTypes.get(fieldIndex);
   }
 
+  public Type fieldType(String columnName) {
+    return columnTypes.get(fieldIdx(columnName));
+  }
+
   public List<String> getColumnNames() {
     return columnNames;
   }

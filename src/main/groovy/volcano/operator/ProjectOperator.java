@@ -7,21 +7,23 @@ import java.util.List;
 import com.google.common.base.Strings;
 
 import volcano.db.Row;
+import volcano.operator.util.Column;
 import volcano.operator.util.OutputSchema;
 
 public class ProjectOperator implements Operator {
 
   private final Operator input;
-  private final List<String> columns;
+  private final List<Column> columns;
   private final List<Integer> columnIndexes;
   private final OutputSchema outputSchema;
 
-  public ProjectOperator(Operator input, List<String> columns) {
+  public ProjectOperator(Operator input, List<Column> columns) {
     this.input = input;
     this.columns = columns;
-    this.columnIndexes = columns.stream().map(c -> input.getOutputSchema().columnIndex(c)).collect(toList());
-    this.outputSchema = new OutputSchema(columns,
-        columns.stream().map(c -> input.getOutputSchema().columnType(c)).collect(toList()));
+    this.columnIndexes = columns.stream()
+        .map(c -> input.getOutputSchema().columnIndex(c.getName()))
+        .collect(toList());
+    this.outputSchema = new OutputSchema(columns);
   }
 
   @Override

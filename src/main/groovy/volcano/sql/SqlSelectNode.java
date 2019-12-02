@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import volcano.db.Database;
 import volcano.operator.AggregateOperator;
@@ -16,61 +17,69 @@ import volcano.operator.Operator;
 import volcano.operator.ProjectOperator;
 import volcano.operator.ScanOperator;
 import volcano.operator.SortOperator;
-import volcano.operator.filter.FilterLogicalOp;
+import volcano.operator.aggregate.AggregateFn;
 import volcano.operator.sort.SortOrder;
+import volcano.operator.util.Column;
 
 public class SqlSelectNode implements SqlNode {
 
-  private final List<String> columnsToProject;
-  private final String tableName;
   private final SqlFilterNode filterNode;
   private final Map<String,List<String>> sorts;
   private final Database db;
   private final Integer limit;
   private final boolean distinct;
-  private final List<String> groupingColumns;
-  private final List<String> aggrFns;
+  private final String tableName;
+  //todo if multiple tables, split
 
+  private final List<Column> columns;
+
+  //todo reorder result set columns?
   public SqlSelectNode(Map<String,Object> jsonNode, Database db) {
     this.db = db;
-    aggrFns = new ArrayList<>();
-    groupingColumns = parseGroupingColumns(jsonNode);
-    columnsToProject = parseColumns(jsonNode);
+    columns = new ArrayList<>();
     tableName = parseTableName(jsonNode);
-    filterNode = parseFilterNode(jsonNode);
+    parseGroupingColumns(jsonNode);
+    parseColumns(jsonNode);
+    filterNode = SqlFilterNode.parseFilterNode(jsonNode, db, tableName);
     sorts = parseSorts(jsonNode);
     limit = parseLimit(jsonNode);
     distinct = parseDistinct(jsonNode);
   }
-  //todo
-  // having?
 
   //todo these could have fns too
-  private List<String> parseColumns(Map<String,Object> jsonNode) {
+  //todo handle aliases
+  private void parseColumns(Map<String,Object> jsonNode) {
     Object columnsJson = jsonNode.get("columns");
     if (columnsJson.equals("*")) {
-      // * - all columns - will treat empty array as wildcard
-      // if non-empty, add project operator at root of tree
-      return new ArrayList<>();
-    } else {
-      List<Map<String,Object>> ccs = (List<Map<String,Object>>)columnsJson;
-      List<String> colDefs = new ArrayList<>();
-      for (Map<String,Object> c : ccs) {
-        if (groupingColumns.isEmpty()) {
-          colDefs.add((String)((Map<String,Object>)c.get("expr")).get("column"));
-        } else {
-          Map<String,Object> cExpr = (Map<String,Object>)c.get("expr");
-          if (cExpr.get("type").equals("aggr_func")) {
-            String aggrFn = (String)cExpr.get("name");
-            Map<String,Object> aggrArgs = (Map<String,Object>)cExpr.get("args");
-            Map<String,Object> aggrArgsExpr = (Map<String,Object>)aggrArgs.get("expr");
-            String aggCol = (String)aggrArgsExpr.get("column");
-            colDefs.add(aggCol);
-            aggrFns.add(aggrFn);
-          }
+      throw new IllegalArgumentException("Projection columns must be explicitly specified, but received *");
+    }
+    List<Map<String,Object>> ccs = (List<Map<String,Object>>)columnsJson;
+    for (Map<String,Object> c : ccs) {
+      Map<String,Object> exprNode = (Map<String,Object>)c.get("expr");
+      if (exprNode.get("type").equals("column_ref")) {
+        String table = (String)exprNode.get("table");
+        if (table == null) {
+          throw new IllegalArgumentException(
+              String.format("Must specify table for projected columns %s", exprNode));
         }
+        String name = (String)exprNode.get("column");
+        if (columns.stream().noneMatch(t -> t.getName().equals(name))) {
+          // grouping column is also specified in projections in AST
+          columns.add(new Column(name, db.getTable(table).fieldType(name), Optional.empty(), false));
+        }
+      } else if (exprNode.get("type").equals("aggr_func")) {
+        //todo this needs to be a more generic traversal
+        String aggrFn = (String)exprNode.get("name");
+        Map<String,Object> aggrArgs = (Map<String,Object>)exprNode.get("args");
+        Map<String,Object> aggrArgsExpr = (Map<String,Object>)aggrArgs.get("expr");
+        String name = (String)aggrArgsExpr.get("column");
+        String table = (String)aggrArgsExpr.get("table");
+        columns.add(
+            new Column(name, db.getTable(table).fieldType(name), Optional.of(AggregateFn.valueOf(aggrFn)),
+                false));
+      } else {
+        throw new IllegalArgumentException(String.format("Unrecognized column type %s", exprNode));
       }
-      return colDefs;
     }
   }
 
@@ -82,48 +91,6 @@ public class SqlSelectNode implements SqlNode {
           "We don't support joins yet, but query is selecting from multiple tables");
     }
     return (String)from.get(0).get("table");
-  }
-
-  private SqlFilterNode parseFilterNode(Map<String,Object> jsonNode) {
-    if (jsonNode.get("where") == null) {
-      return null;
-    } else {
-      Map<String,Object> where = (Map<String,Object>)jsonNode.get("where");
-      if (where.get("type").equals("column_ref")) {
-        // treat 'where col' as 'where col = true'
-        return new SqlFilterNode((String)where.get("column"), FilterLogicalOp.EQ, true, tableName);
-      } else if (where.get("type").equals("unary_expr")) {
-        // treat 'where not col' as 'where col <> true'
-        if (!where.get("operator").equals("NOT")) {
-          throw new IllegalArgumentException(
-              String.format("NOT is the only supported unary operator; received %s", where.get("operator")));
-        }
-        Map<String,Object> expr = (Map<String,Object>)where.get("expr");
-        String filterColumn = (String)expr.get("column");
-        return new SqlFilterNode(filterColumn, FilterLogicalOp.NEQ, true, tableName);
-      } else if (where.get("type").equals("binary_expr")) {
-        FilterLogicalOp op = FilterLogicalOp.findBySqlOp((String)where.get("operator"));
-        Map<String,Object> left = (Map<String,Object>)where.get("left");
-        if (!left.get("type").equals("column_ref")) {
-          throw new IllegalArgumentException(
-              String.format("Only column refs are supported as left value of filter; received %s", left));
-        }
-        String filterColumn = (String)left.get("column");
-
-        Map<String,Object> right = (Map<String,Object>)where.get("right");
-        if (!right.containsKey("value")) {
-          throw new IllegalArgumentException(
-              String.format("Only values are supported as right value of filter; received %s", right));
-        }
-        Object filterValue = right.get("value");
-        return new SqlFilterNode(filterColumn, op,
-            (db.getTable(tableName).fieldType(db.getTable(tableName).fieldIdx(filterColumn))).cast(
-                filterValue), tableName);
-      } else {
-        throw new IllegalArgumentException(
-            String.format("Unrecognized where clause type: %s", where.get("type")));
-      }
-    }
   }
 
   private Map<String,List<String>> parseSorts(Map<String,Object> jsonNode) {
@@ -170,20 +137,22 @@ public class SqlSelectNode implements SqlNode {
     return "DISTINCT".equals(jsonNode.get("distinct"));
   }
 
-  private List<String> parseGroupingColumns(Map<String,Object> jsonNode) {
+  private void parseGroupingColumns(Map<String,Object> jsonNode) {
     if (jsonNode.get("groupby") == null) {
-      return new ArrayList<>();
+      return;
     }
     List<Map<String,Object>> groupBy = (List<Map<String,Object>>)jsonNode.get("groupby");
     //todo - handle non column_refs, and other tables
-    List<String> gCols = new ArrayList<>();
+    List<Column> gCols = new ArrayList<>();
     groupBy.forEach(g -> {
       if (!g.get("type").equals("column_ref")) {
         throw new IllegalArgumentException(String.format("Only support grouping on columns; received %s", g));
       }
-      gCols.add((String)g.get("column"));
+      String name = (String)g.get("column");
+      gCols.add(new Column(name, db.getTable(tableName).fieldType(db.getTable(tableName).fieldIdx(name)),
+          Optional.empty(), true));
     });
-    return gCols;
+    columns.addAll(gCols);
   }
 
   @Override
@@ -192,26 +161,17 @@ public class SqlSelectNode implements SqlNode {
     if (filterNode != null) {
       rootOperator = new FilterOperator(rootOperator, filterNode.getFilter(db));
     }
-    if (!groupingColumns.isEmpty()) {
-      rootOperator = new AggregateOperator(rootOperator, groupingColumns, columnsToProject, aggrFns);
+    if (columns.stream().anyMatch(c -> c.getFn().isPresent())) {
+      rootOperator = new AggregateOperator(rootOperator, columns);
     }
     if (!sorts.isEmpty()) {
       rootOperator = new SortOperator(rootOperator, sorts.get("columns"),
           sorts.get("orders").stream().map(SortOrder::valueOf).collect(toList()));
     }
     if (distinct) {
-      rootOperator = new DistinctOperator(rootOperator, columnsToProject);
+      rootOperator = new DistinctOperator(rootOperator, columns);
     }
-    if (!columnsToProject.isEmpty()) {
-      if (!groupingColumns.isEmpty()) {
-        List<String> cols = new ArrayList<>();
-        cols.addAll(groupingColumns);
-        cols.addAll(columnsToProject);
-        rootOperator = new ProjectOperator(rootOperator, cols);
-      } else {
-        rootOperator = new ProjectOperator(rootOperator, columnsToProject);
-      }
-    }
+    rootOperator = new ProjectOperator(rootOperator, columns);
     if (limit != null) {
       rootOperator = new LimitOperator(rootOperator, limit);
     }

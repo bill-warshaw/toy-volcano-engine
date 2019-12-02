@@ -1,5 +1,7 @@
 package volcano.operator.util;
 
+import static java.util.stream.Collectors.toList;
+
 import java.util.List;
 
 import volcano.db.Type;
@@ -14,6 +16,11 @@ public class OutputSchema {
   public OutputSchema(List<String> columnNames, List<Type> columnTypes) {
     this.columnNames = columnNames;
     this.columnTypes = columnTypes;
+  }
+
+  public OutputSchema(List<Column> columns) {
+    this(columns.stream().map(Column::getName).collect(toList()),
+        columns.stream().map(Column::getType).collect(toList()));
   }
 
   public List<String> getColumnNames() {

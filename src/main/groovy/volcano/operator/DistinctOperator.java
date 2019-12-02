@@ -10,6 +10,7 @@ import java.util.Set;
 import com.google.common.base.Strings;
 
 import volcano.db.Row;
+import volcano.operator.util.Column;
 import volcano.operator.util.OutputSchema;
 
 public class DistinctOperator implements Operator {
@@ -19,11 +20,11 @@ public class DistinctOperator implements Operator {
   private final List<Integer> columnIndexes;
 
   // distinctColumns maps to projected columns for this select node
-  public DistinctOperator(Operator input, List<String> distinctColumns) {
+  public DistinctOperator(Operator input, List<Column> distinctColumns) {
     this.input = input;
     this.previouslySeenRowHashes = new HashSet<>();
     this.columnIndexes = distinctColumns.stream()
-        .map(c -> input.getOutputSchema().columnIndex(c))
+        .map(c -> input.getOutputSchema().columnIndex(c.getName()))
         .collect(toList());
   }
 
