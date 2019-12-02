@@ -66,7 +66,7 @@ ORDER  BY department.name
 """
 
     expect:
-    def result = new QueryEngine(db).executeQuery(query)
+    def result = new QueryEngine(db, 'localhost').executeQuery(query)
     assert result == queryH2Database(query)
     result == []
   }

@@ -13,9 +13,9 @@ public class QueryEngine {
   private final Database db;
   private final SqlAstParser sqlAstParser;
 
-  public QueryEngine(Database db) {
+  public QueryEngine(Database db, String sqlAstParserHostname) {
     this.db = db;
-    this.sqlAstParser = new SqlAstParser("localhost", 7001);
+    this.sqlAstParser = new SqlAstParser(sqlAstParserHostname, 7001);
   }
 
   List<Row> executeQuery(String sqlStmt) throws Exception {
