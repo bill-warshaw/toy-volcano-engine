@@ -34,6 +34,7 @@ public class SqlSelectNode implements SqlNode {
   private final List<String> tableNames;
 
   private final List<Column> columns;
+  private final List<String> groupingColumns;
 
   private final List<List<String>> joinColumns;
 
@@ -41,6 +42,7 @@ public class SqlSelectNode implements SqlNode {
   public SqlSelectNode(Map<String,Object> jsonNode, Database db) {
     this.db = db;
     columns = new ArrayList<>();
+    groupingColumns = new ArrayList<>();
     joinColumns = new ArrayList<>();
     tableNames = parseTableNames(jsonNode);
     parseGroupingColumns(jsonNode);
@@ -68,10 +70,8 @@ public class SqlSelectNode implements SqlNode {
               String.format("Must specify table for projected columns %s", exprNode));
         }
         String name = (String)exprNode.get("column");
-        if (columns.stream().noneMatch(t -> t.getName().equals(name))) {
-          // grouping column is also specified in projections in AST
-          columns.add(new Column(name, db.getTable(table).fieldType(name), Optional.empty(), false));
-        }
+        boolean isGrouping = groupingColumns.stream().anyMatch(t -> t.equals(name));
+        columns.add(new Column(name, db.getTable(table).fieldType(name), Optional.empty(), isGrouping));
       } else if (exprNode.get("type").equals("aggr_func")) {
         //todo this needs to be a more generic traversal
         String aggrFn = (String)exprNode.get("name");
@@ -172,18 +172,14 @@ public class SqlSelectNode implements SqlNode {
     }
     List<Map<String,Object>> groupBy = (List<Map<String,Object>>)jsonNode.get("groupby");
     //todo - handle non column_refs, and other tables
-    List<Column> gCols = new ArrayList<>();
     groupBy.forEach(g -> {
       if (!g.get("type").equals("column_ref")) {
         throw new IllegalArgumentException(String.format("Only support grouping on columns; received %s", g));
       }
       String name = (String)g.get("column");
       String table = (String)g.get("table");
-      gCols.add(
-          new Column(name, db.getTable(table).fieldType(db.getTable(table).fieldIdx(name)), Optional.empty(),
-              true));
+      groupingColumns.add(name);
     });
-    columns.addAll(gCols);
   }
 
   @Override
