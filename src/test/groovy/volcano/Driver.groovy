@@ -1,16 +1,24 @@
 package volcano
 
 import static volcano.db.Type.BOOLEAN
+import static volcano.db.Type.DOUBLE
 import static volcano.db.Type.INT
 import static volcano.db.Type.STRING
 
+import java.sql.Connection
+import java.sql.DriverManager
+
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import spock.lang.Specification
 import volcano.db.Database
 import volcano.db.Row
 import volcano.db.Table
-import volcano.db.Type
 
 class Driver extends Specification {
+
+  @Rule
+  TemporaryFolder tempFolder
 
   Database db
 
@@ -26,7 +34,7 @@ class Driver extends Specification {
     ])
 
     def courseTableNames = ['id', 'title', 'department', 'professor', 'course_number', 'max_enrollment', 'avg_gpa']
-    def courseTableTypes = [INT, STRING, STRING, STRING, INT, INT, Type.DOUBLE]
+    def courseTableTypes = [INT, STRING, STRING, STRING, INT, INT, DOUBLE]
     def courseData = rows([
         [8, 'Ethics in Politics', 'GVPT', 'Grover', 202, 100, 4.0],
         [3, 'Algorithms', 'CMSC', 'Knuth', 351, 50, 2.8],
@@ -42,21 +50,63 @@ class Driver extends Specification {
     def departmentTable = new Table('department', departmentTableNames, departmentTableTypes, departmentData)
     def courseTable = new Table('course', courseTableNames, courseTableTypes, courseData)
     db = new Database([course: courseTable, department: departmentTable])
+    populateH2Database(courseData, departmentData)
   }
 
   def 'main test'() {
     given:
     def query = """
-SELECT Max(course.avg_gpa), 
-       department.NAME 
+SELECT department.name, 
+       max(course.avg_gpa) 
 FROM   course 
        JOIN department 
          ON course.department = department.abbreviation 
-GROUP  BY department.NAME 
+GROUP  BY department.name 
+ORDER  BY department.name
 """
 
     expect:
-    new QueryEngine(db).executeQuery(query) == []
+    def result = new QueryEngine(db).executeQuery(query)
+    assert result == queryH2Database(query)
+    result == []
+  }
+
+  private void populateH2Database(List<Row> courseData, List<Row> departmentData) {
+    Connection c
+    try {
+      c = DriverManager.getConnection("jdbc:h2:~/$tempFolder.root", "sa", "")
+      c.createStatement().execute("create table course (id int, title varchar, department varchar, professor varchar, course_number int, max_enrollment int, avg_gpa double)")
+      c.createStatement().execute("create table department (id int, name varchar, abbreviation varchar, description varchar, is_stem boolean)")
+      def insertCourseValues = "insert into course values ${courseData.collect { '(' + it + ')' }.join(",")}"
+      def insertDeptValues = "insert into department values ${departmentData.collect { '(' + it + ')' }.join(",")}"
+      c.createStatement().execute(insertCourseValues)
+      c.createStatement().execute(insertDeptValues)
+    }
+    finally {
+      c?.close()
+    }
+  }
+
+  private List<Row> queryH2Database(String query) {
+    Connection c
+    try {
+      c = DriverManager.getConnection("jdbc:h2:~/$tempFolder.root", "sa", "")
+      def resultSet = c.createStatement().executeQuery(query)
+      def resultRows = []
+      def metadata = resultSet.getMetaData()
+      while (resultSet.next()) {
+        resultRows.add(new Row(
+            (1..metadata.columnCount).collect {
+              resultSet.getObject(it)
+            }
+        )
+        )
+      }
+      return resultRows
+    }
+    finally {
+      c?.close()
+    }
   }
 
   private static List<Row> rows(List<List> rrs) {

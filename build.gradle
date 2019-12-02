@@ -12,4 +12,5 @@ dependencies {
   implementation 'com.google.code.gson:gson:2.8.6'
   implementation 'com.google.guava:guava:28.1-jre'
   testCompileOnly 'org.spockframework:spock-core:1.3-groovy-2.5'
+  testImplementation 'com.h2database:h2:1.4.200'
 }

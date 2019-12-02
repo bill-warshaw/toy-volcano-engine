@@ -3,6 +3,7 @@ package volcano.db;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class Row {
 
@@ -29,7 +30,13 @@ public class Row {
 
   @Override
   public String toString() {
-    return elements.toString();
+    return elements.stream().map(e -> {
+      if (e instanceof String) {
+        return "'" + e + "'";
+      } else {
+        return ((Comparable)e).toString();
+      }
+    }).collect(Collectors.joining(","));
   }
 
   @Override

@@ -16,9 +16,10 @@ import java.util.Set;
 import com.google.common.base.Strings;
 
 import volcano.db.Row;
+import volcano.db.Type;
 import volcano.operator.aggregate.AggregateFn;
-import volcano.operator.util.OutputSchema;
 import volcano.operator.util.Column;
+import volcano.operator.util.OutputSchema;
 
 public class AggregateOperator implements Operator {
   private final Operator input;
@@ -120,15 +121,21 @@ public class AggregateOperator implements Operator {
     List<Comparable> aggs = new ArrayList<>();
     for (int i = 0; i < aggrColumns.size(); i++) {
       Column col = aggrColumns.get(i);
+      Type t = col.getType();
       Object agg = aggregates.get(i).get(group);
       switch (col.getFn().get()) {
       case AVG:
         aggs.add(((BigDecimal)((Object[])agg)[0]).doubleValue() / (Integer)((Object[])agg)[1]);
         break;
       case COUNT:
+        aggs.add((Integer)agg);
       case MAX:
       case MIN:
-        aggs.add((Comparable)agg);
+        if (t == Type.INT) {
+          aggs.add(((BigDecimal)agg).longValue());
+        } else {
+          aggs.add(((BigDecimal)agg).doubleValue());
+        }
         break;
       case SUM:
         aggs.add(((BigDecimal)agg).doubleValue());
