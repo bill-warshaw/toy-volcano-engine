@@ -24,8 +24,9 @@ class Driver extends Specification {
 
     expect:
 //    new QueryEngine(db).executeQuery('select distinct customer_id,customer_name from customers where customer_id > 1 order by customer_name asc, customer_id desc limit 2') == []
-    new QueryEngine(db).executeQuery("select c.customer_id, avg(c.customer_totalspend) from c group by c.customer_id") == []
-//    new QueryEngine(db).executeQuery("select customers.customer_id, t2.n, t2.x from customers join t2 on customer_id") == []
+//    new QueryEngine(db).executeQuery("select c.customer_id, avg(c.customer_totalspend) from c group by c.customer_id") == []
+//    new QueryEngine(db).executeQuery("select c.customer_id, t2.n, t2.x from c join t2 on c.customer_id=t2.id") == []
+    new QueryEngine(db).executeQuery("select max(c.customer_totalspend), t2.n from c join t2 on c.customer_id=t2.id  where c.customer_id > 2 group by t2.n") == []
   }
 
   private static List<Row> getDataT1() {
@@ -33,7 +34,6 @@ class Driver extends Specification {
         [1, 'bill', 3.14 as double, true],
         [2, 'peets', 6.83 as double, false],
         [3, 'aaa', 1.2 as double, true],
-        [3, 'ggg', 2.3 as double, false],
         [4, 'aaa', 2.3 as double, false],
         [4, 'aaa', 3.4 as double, true]
     ])
@@ -43,7 +43,9 @@ class Driver extends Specification {
     rows([
         [1, 'bill', 111],
         [2, 'peets', 222],
-        [3, 'aaa', 333]
+        [3, 'aaa', 333],
+        [3, 'ggg', 369],
+        [4, 'xxx', 777]
     ])
   }
 

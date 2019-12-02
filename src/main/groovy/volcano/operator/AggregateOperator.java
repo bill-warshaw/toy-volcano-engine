@@ -163,6 +163,8 @@ public class AggregateOperator implements Operator {
     sb.append(",");
     sb.append("input:").append("\n");
     sb.append(input.printOperator(indentation + 2));
+    sb.append("\n");
+    sb.append(Strings.repeat(" ", indentation));
     sb.append("]");
     return sb.toString();
   }

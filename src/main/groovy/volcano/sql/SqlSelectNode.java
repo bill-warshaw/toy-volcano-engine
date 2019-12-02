@@ -8,10 +8,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.google.common.collect.ImmutableList;
+
 import volcano.db.Database;
 import volcano.operator.AggregateOperator;
 import volcano.operator.DistinctOperator;
 import volcano.operator.FilterOperator;
+import volcano.operator.HashJoinOperator;
 import volcano.operator.LimitOperator;
 import volcano.operator.Operator;
 import volcano.operator.ProjectOperator;
@@ -28,19 +31,21 @@ public class SqlSelectNode implements SqlNode {
   private final Database db;
   private final Integer limit;
   private final boolean distinct;
-  private final String tableName;
-  //todo if multiple tables, split
+  private final List<String> tableNames;
 
   private final List<Column> columns;
+
+  private final List<List<String>> joinColumns;
 
   //todo reorder result set columns?
   public SqlSelectNode(Map<String,Object> jsonNode, Database db) {
     this.db = db;
     columns = new ArrayList<>();
-    tableName = parseTableName(jsonNode);
+    joinColumns = new ArrayList<>();
+    tableNames = parseTableNames(jsonNode);
     parseGroupingColumns(jsonNode);
     parseColumns(jsonNode);
-    filterNode = SqlFilterNode.parseFilterNode(jsonNode, db, tableName);
+    filterNode = SqlFilterNode.parseFilterNode(jsonNode, db, tableNames);
     sorts = parseSorts(jsonNode);
     limit = parseLimit(jsonNode);
     distinct = parseDistinct(jsonNode);
@@ -83,14 +88,38 @@ public class SqlSelectNode implements SqlNode {
     }
   }
 
-  //todo multiple tables for FROM for joins
-  private String parseTableName(Map<String,Object> jsonNode) {
+  //todo if not using `join on` syntax, join filters can appear in where clause
+  private List<String> parseTableNames(Map<String,Object> jsonNode) {
     List<Map<String,Object>> from = (List<Map<String,Object>>)jsonNode.get("from");
-    if (from.size() != 1) {
-      throw new IllegalArgumentException(
-          "We don't support joins yet, but query is selecting from multiple tables");
+    if (from.size() > 1) {
+      if (from.size() > 2) {
+        throw new IllegalArgumentException("Only support two-way joins");
+      }
+      Map<String,Object> secondTable = from.get(1);
+      if (!secondTable.get("join").equals("INNER JOIN")) {
+        throw new IllegalArgumentException("Only support inner joins");
+      }
+      Map<String,Object> on = (Map<String,Object>)secondTable.get("on");
+      if (on.get("type").equals("column_ref")) {
+        String joinCol = (String)on.get("column");
+        joinColumns.add(new ArrayList<>(ImmutableList.of(joinCol)));
+        joinColumns.add(new ArrayList<>(ImmutableList.of(joinCol)));
+      } else if (on.get("type").equals("binary_expr")) {
+        if (!on.get("operator").equals("=")) {
+          throw new IllegalArgumentException("Only support equijoins");
+        }
+        Map<String,Object> left = (Map<String,Object>)on.get("left");
+        Map<String,Object> right = (Map<String,Object>)on.get("right");
+        if (!left.get("type").equals("column_ref") || !right.get("type").equals("column_ref")) {
+          throw new IllegalArgumentException("Don't support joining on subqueries");
+        }
+        joinColumns.add(new ArrayList<>(ImmutableList.of((String)left.get("column"))));
+        joinColumns.add(new ArrayList<>(ImmutableList.of((String)right.get("column"))));
+      } else {
+        throw new IllegalArgumentException("Don't support joining on subqueries");
+      }
     }
-    return (String)from.get(0).get("table");
+    return from.stream().map(m -> (String)m.get("table")).collect(toList());
   }
 
   private Map<String,List<String>> parseSorts(Map<String,Object> jsonNode) {
@@ -149,17 +178,26 @@ public class SqlSelectNode implements SqlNode {
         throw new IllegalArgumentException(String.format("Only support grouping on columns; received %s", g));
       }
       String name = (String)g.get("column");
-      gCols.add(new Column(name, db.getTable(tableName).fieldType(db.getTable(tableName).fieldIdx(name)),
-          Optional.empty(), true));
+      String table = (String)g.get("table");
+      gCols.add(
+          new Column(name, db.getTable(table).fieldType(db.getTable(table).fieldIdx(name)), Optional.empty(),
+              true));
     });
     columns.addAll(gCols);
   }
 
   @Override
   public Operator toOperator(Database db) {
-    Operator rootOperator = new ScanOperator(db, tableName);
+    Operator rootOperator;
+    if (tableNames.size() > 1) {
+      Operator leftInput = new ScanOperator(db, tableNames.get(0));
+      Operator rightInput = new ScanOperator(db, tableNames.get(1));
+      rootOperator = new HashJoinOperator(leftInput, rightInput, joinColumns.get(0), joinColumns.get(1));
+    } else {
+      rootOperator = new ScanOperator(db, tableNames.get(0));
+    }
     if (filterNode != null) {
-      rootOperator = new FilterOperator(rootOperator, filterNode.getFilter(db));
+      rootOperator = new FilterOperator(rootOperator, filterNode.getFilter());
     }
     if (columns.stream().anyMatch(c -> c.getFn().isPresent())) {
       rootOperator = new AggregateOperator(rootOperator, columns);

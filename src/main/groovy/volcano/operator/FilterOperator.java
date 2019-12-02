@@ -10,10 +10,12 @@ public class FilterOperator implements Operator {
 
   private final Operator input;
   private final FilterClause filter;
+  private final int fieldIndex;
 
   public FilterOperator(Operator input, FilterClause filter) {
     this.input = input;
     this.filter = filter;
+    this.fieldIndex = input.getOutputSchema().columnIndex(filter.getColumn());
   }
 
   @Override
@@ -29,7 +31,7 @@ public class FilterOperator implements Operator {
         input.close();
         return null;
       }
-      if (filter.accepts(r)) {
+      if (filter.accepts(r, fieldIndex)) {
         return r;
       }
     }
@@ -53,6 +55,8 @@ public class FilterOperator implements Operator {
     sb.append(",");
     sb.append("input:").append("\n");
     sb.append(input.printOperator(indentation + 2));
+    sb.append("\n");
+    sb.append(Strings.repeat(" ", indentation));
     sb.append("]");
     return sb.toString();
   }

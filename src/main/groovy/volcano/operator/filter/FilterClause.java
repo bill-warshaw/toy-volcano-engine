@@ -25,15 +25,15 @@ public class FilterClause {
   private static final Set<FilterLogicalOp> scalarOps = new HashSet<>(
       Arrays.asList(EQ, NEQ, GT, GTE, LT, LTE, LIKE));
 
-  private final int fieldIndex;
+  private final String column;
   private final FilterLogicalOp op;
   private final Comparable value;
   private Optional<Pattern> regex;
   private Optional<List<Comparable>> betweenClause;
   private Optional<List<Comparable>> inClause;
 
-  public FilterClause(int fieldIndex, FilterLogicalOp op, Comparable value) {
-    this.fieldIndex = fieldIndex;
+  public FilterClause(String column, FilterLogicalOp op, Comparable value) {
+    this.column = column;
     this.op = op;
     this.value = value;
     if (scalarOps.contains(op)) {
@@ -66,7 +66,7 @@ public class FilterClause {
     }
   }
 
-  public boolean accepts(Row row) {
+  public boolean accepts(Row row, int fieldIndex) {
     switch (op) {
     case EQ:
       return row.getAt(fieldIndex).equals(value);
@@ -94,8 +94,12 @@ public class FilterClause {
     }
   }
 
+  public String getColumn() {
+    return column;
+  }
+
   @Override
   public String toString() {
-    return String.format("fieldIndex: %d, op: %s, value: %s", fieldIndex, op, value);
+    return String.format("column: %s, op: %s, value: %s", column, op, value);
   }
 }

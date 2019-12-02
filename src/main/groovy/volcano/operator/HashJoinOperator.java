@@ -84,11 +84,10 @@ public class HashJoinOperator implements Operator {
           Row buildTableRow = temporaryMultipleBuildRowsForKeys.remove(0);
           return temporaryProbeRow.combine(buildTableRow);
         } else {
-          return rows.get(0);
+          return r.combine(rows.get(0));
         }
       }
     }
-
   }
 
   @Override
@@ -120,9 +119,16 @@ public class HashJoinOperator implements Operator {
     sb.append("rightColumns:");
     sb.append(rightJoinCols);
     sb.append(",");
+    sb.append("\n");
+    sb.append(Strings.repeat(" ", indentation + 2));
     sb.append("left_input:").append("\n");
-    sb.append(leftInput.printOperator(indentation + 2));
+    sb.append(leftInput.printOperator(indentation + 4));
+    sb.append("\n");
+    sb.append(Strings.repeat(" ", indentation + 2));
     sb.append("right_input:").append("\n");
+    sb.append(rightInput.printOperator(indentation + 4));
+    sb.append("\n");
+    sb.append(Strings.repeat(" ", indentation));
     sb.append("]");
     return sb.toString();
   }
