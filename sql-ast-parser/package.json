@@ -1,0 +1,14 @@
+{
+  "name": "sql_ast_parser",
+  "version": "1.0.0",
+  "description": "SQL AST parser",
+  "author": "First Last <first.last@example.com>",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.16.1",
+    "flora-sql-parser": "^0.9.4"
+  }
+}
